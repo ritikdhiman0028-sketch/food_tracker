@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}View Date — Food Tracker{% endblock %}
+
+{% block content %}
+<div class="totals-strip" id="totals-strip">
+  <div class="strip-date" id="strip-date">—</div>
+  <div class="strip-stats" id="strip-stats"></div>
+</div>
+
+<div class="page-card" style="margin-top:24px">
+  <h2 class="page-title">Add Food to This Date</h2>
+  <div class="form-row">
+    <div class="field-group" style="flex:1">
+      <label for="food-select">Select Food</label>
+      <select id="food-select"><option value="">— pick a food —</option></select>
+    </div>
+    <div class="field-group submit-group">
+      <label style="visibility:hidden">x</label>
+      <button class="btn-primary" onclick="addFoodToDate()">+ Add Food</button>
+    </div>
+    <div class="field-group">
+      <label style="visibility:hidden">x</label>
+      <a class="btn-outline" href="/add-food">+ New Food Item</a>
+    </div>
+  </div>
+</div>
+
+<div class="page-card" style="margin-top:24px">
+  <h2 class="page-title">Food Log</h2>
+  <div class="table-wrap" id="date-food-table">
+    <div class="empty-state"><div class="big-icon">🥗</div><p>No food logged for this date yet.</p></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const currentDateId = {{ date_id | tojson }};
+let allFoods = [];
+let allDates = [];
+
+function getTotals(dateEntry) {
+  let protein = 0, carbs = 0, fat = 0;
+  (dateEntry.foodIds || []).forEach(fid => {
+    const f = allFoods.find(x => x.id === fid);
+    if (f) { protein += +f.protein; carbs += +f.carbs; fat += +f.fat; }
+  });
+  return { protein, carbs, fat, calories: calcCal(protein, carbs, fat) };
+}
+
+async function renderViewPage() {
+  if (!currentDateId) { window.location.href = '/'; return; }
+  try {
+    [allDates, allFoods] = await Promise.all([api('GET', '/api/dates'), api('GET', '/api/foods')]);
+  } catch (e) { showToast('Failed to load data', true); return; }
+
+  const entry = allDates.find(d => d.id === currentDateId);
+  if (!entry) { window.location.href = '/'; return; }
+
+  const totals = getTotals(entry);
+  document.getElementById('strip-date').textContent = '📅 ' + fmtDate(entry.date);
+  document.getElementById('strip-stats').innerHTML = [
+    { label: 'Protein',  value: totals.protein  + 'g', cls: '' },
+    { label: 'Carbs',    value: totals.carbs    + 'g', cls: '' },
+    { label: 'Fat',      value: totals.fat      + 'g', cls: '' },
+    { label: 'Calories', value: totals.calories,        cls: ' cal' },
+  ].map(s => `<div class="strip-stat">
+    <span class="label">${s.label}</span>
+    <span class="value${s.cls}">${s.value}</span>
+  </div>`).join('');
+
+  const sel = document.getElementById('food-select');
+  sel.innerHTML = '<option value="">— pick a food —</option>' +
+    allFoods.map(f => `<option value="${f.id}">${escHtml(f.name)} (${calcCal(f.protein, f.carbs, f.fat)} kcal)</option>`).join('');
+
+  const tableWrap = document.getElementById('date-food-table');
+  const logged = (entry.foodIds || []).map(fid => allFoods.find(f => f.id === fid)).filter(Boolean);
+
+  if (logged.length === 0) {
+    tableWrap.innerHTML = `<div class="empty-state"><div class="big-icon">🥗</div><p>No food logged for this date yet.</p></div>`;
+    return;
+  }
+  tableWrap.innerHTML = `<table><thead><tr>
+    <th>#</th><th>Name</th><th>Protein (g)</th><th>Carbs (g)</th><th>Fat (g)</th><th>Calories</th><th>Actions</th>
+  </tr></thead><tbody>
+  ${logged.map((f, i) => `<tr>
+    <td class="num">${i + 1}</td>
+    <td class="food-name">${escHtml(f.name)}</td>
+    <td class="num">${f.protein}</td>
+    <td class="num">${f.carbs}</td>
+    <td class="num">${f.fat}</td>
+    <td class="cal-cell">${calcCal(f.protein, f.carbs, f.fat)}</td>
+    <td><button class="btn-sm danger" onclick="removeFoodFromDate('${f.id}')">✕ Remove</button></td>
+  </tr>`).join('')}
+  </tbody></table>`;
+}
+
+async function addFoodToDate() {
+  const fid = document.getElementById('food-select').value;
+  if (!fid) { showToast('Please select a food.', true); return; }
+  try {
+    await api('POST', `/api/dates/${currentDateId}/foods`, { foodId: fid });
+    showToast('Food added to this date!');
+    renderViewPage();
+  } catch (e) { showToast(e.message, true); }
+}
+
+async function removeFoodFromDate(fid) {
+  try {
+    await api('DELETE', `/api/dates/${currentDateId}/foods/${fid}`);
+    showToast('Food removed.');
+    renderViewPage();
+  } catch (e) { showToast(e.message, true); }
+}
+
+renderViewPage();
+</script>
+{% endblock %}

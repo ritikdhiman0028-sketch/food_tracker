@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Home — Food Tracker{% endblock %}
+
+{% block content %}
+<div class="add-panel">
+  <div class="field-group">
+    <label>Add New Date</label>
+    <input type="date" id="date-input">
+  </div>
+  <button class="btn-primary" onclick="addDate()">+ Add Date</button>
+</div>
+
+<div class="section-header">
+  <span class="section-title">Existing Records</span>
+  <span class="record-count" id="record-count">0</span>
+</div>
+
+<div class="cards-grid" id="cards-container"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allFoods = [];
+let allDates = [];
+
+function getTotals(dateEntry) {
+  let protein = 0, carbs = 0, fat = 0;
+  (dateEntry.foodIds || []).forEach(fid => {
+    const f = allFoods.find(x => x.id === fid);
+    if (f) { protein += +f.protein; carbs += +f.carbs; fat += +f.fat; }
+  });
+  return { protein, carbs, fat, calories: calcCal(protein, carbs, fat) };
+}
+
+async function renderHome() {
+  try {
+    [allDates, allFoods] = await Promise.all([api('GET', '/api/dates'), api('GET', '/api/foods')]);
+  } catch (e) { showToast('Failed to load data', true); return; }
+
+  const container = document.getElementById('cards-container');
+  document.getElementById('record-count').textContent = allDates.length;
+
+  if (allDates.length === 0) {
+    container.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="big-icon">📅</div><p>No records yet — add a date above to get started.</p></div>`;
+    return;
+  }
+
+  container.innerHTML = allDates.map(d => {
+    const t = getTotals(d);
+    return `<div class="date-card">
+      <div class="card-header">
+        <span class="card-date">${fmtDate(d.date)}</span>
+        <div class="card-actions">
+          <a class="btn-view" href="/view-date?id=${d.id}">View →</a>
+          <button class="btn-del" onclick="deleteDate('${d.id}')">✕</button>
+        </div>
+      </div>
+      <div class="card-stats">
+        <div class="stat"><span class="stat-label">Protein</span><span class="stat-value">${t.protein}g</span></div>
+        <div class="stat"><span class="stat-label">Carbs</span><span class="stat-value">${t.carbs}g</span></div>
+        <div class="stat"><span class="stat-label">Fat</span><span class="stat-value">${t.fat}g</span></div>
+        <div class="stat"><span class="stat-label">Calories</span><span class="stat-value cal">${t.calories}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function addDate() {
+  const inp = document.getElementById('date-input');
+  if (!inp.value) { showToast('Please pick a date first.', true); return; }
+  try {
+    await api('POST', '/api/dates', { date: inp.value });
+    showToast('Date added!');
+    renderHome();
+  } catch (e) { showToast(e.message, true); }
+}
+
+async function deleteDate(id) {
+  if (!confirm('Delete this date and all its food entries?')) return;
+  try {
+    await api('DELETE', '/api/dates/' + id);
+    showToast('Date deleted.');
+    renderHome();
+  } catch (e) { showToast(e.message, true); }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.getElementById('date-input').value = new Date().toISOString().split('T')[0];
+document.getElementById('date-input').addEventListener('keydown', e => { if (e.key === 'Enter') addDate(); });
+renderHome();
+</script>
+{% endblock %}

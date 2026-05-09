@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login — Food Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <a class="login-logo" href="/">FOOD TRACKER</a>
+
+  <div class="login-box" id="box-login">
+    <div class="login-tabs">
+      <button class="login-tab active" onclick="showLogin()">Login</button>
+      <button class="login-tab" onclick="showRegister()">Register</button>
+    </div>
+    <div id="form-login">
+      <div class="login-error" id="login-error"></div>
+      <div class="login-field"><label>Username</label><input type="text" id="login-username" placeholder="your username" autocomplete="username"></div>
+      <div class="login-field"><label>Password</label><input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password"></div>
+      <button class="btn-login" onclick="doLogin()">→ Login</button>
+      <div class="login-divider">or</div>
+      <button class="btn-admin-login" onclick="showAdminLogin()">🔐 Admin Login</button>
+      <button class="guest-btn" onclick="continueAsGuest()">Continue as guest (no account)</button>
+    </div>
+    <div id="form-register" style="display:none">
+      <div class="login-error" id="register-error"></div>
+      <div class="login-field"><label>Username</label><input type="text" id="reg-username" placeholder="choose a username" autocomplete="username"></div>
+      <div class="login-field"><label>Password</label><input type="password" id="reg-password" placeholder="min 4 characters" autocomplete="new-password"></div>
+      <button class="btn-login" onclick="doRegister()">→ Create Account</button>
+      <button class="guest-btn" onclick="continueAsGuest()">Continue as guest (no account)</button>
+    </div>
+  </div>
+
+  <div class="login-box" id="box-admin" style="display:none">
+    <div class="admin-badge">⚙ ADMIN ACCESS</div>
+    <div class="login-error" id="admin-error"></div>
+    <div class="login-field"><label>Admin Username</label><input type="text" id="admin-username" placeholder="admin" autocomplete="off"></div>
+    <div class="login-field"><label>Admin Password</label><input type="password" id="admin-password" placeholder="••••••••" autocomplete="off"></div>
+    <button class="btn-admin-login" onclick="doAdminLogin()">🔐 Login as Admin</button>
+    <div class="login-switch" style="margin-top:14px"><a onclick="showUserLogin()">← Back to user login</a></div>
+  </div>
+</div>
+
+<script>
+function showLogin() {
+  document.getElementById('form-login').style.display = '';
+  document.getElementById('form-register').style.display = 'none';
+  document.querySelectorAll('.login-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+}
+function showRegister() {
+  document.getElementById('form-login').style.display = 'none';
+  document.getElementById('form-register').style.display = '';
+  document.querySelectorAll('.login-tab').forEach((t,i) => t.classList.toggle('active', i===1));
+}
+function showAdminLogin() {
+  document.getElementById('box-login').style.display = 'none';
+  document.getElementById('box-admin').style.display = '';
+  document.getElementById('admin-username').focus();
+}
+function showUserLogin() {
+  document.getElementById('box-admin').style.display = 'none';
+  document.getElementById('box-login').style.display = '';
+}
+function setError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.toggle('show', !!msg);
+}
+async function doLogin() {
+  setError('login-error', '');
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!username || !password) { setError('login-error', 'Please enter username and password'); return; }
+  try {
+    const r = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password,role:'user'}) });
+    const data = await r.json();
+    if (!r.ok) { setError('login-error', data.error); return; }
+    window.location.href = '/';
+  } catch(e) { setError('login-error', 'Login failed. Try again.'); }
+}
+async function doRegister() {
+  setError('register-error', '');
+  const username = document.getElementById('reg-username').value.trim();
+  const password = document.getElementById('reg-password').value;
+  if (!username || !password) { setError('register-error', 'Please enter username and password'); return; }
+  try {
+    const r = await fetch('/api/auth/register', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password}) });
+    const data = await r.json();
+    if (!r.ok) { setError('register-error', data.error); return; }
+    window.location.href = '/';
+  } catch(e) { setError('register-error', 'Registration failed. Try again.'); }
+}
+async function doAdminLogin() {
+  setError('admin-error', '');
+  const username = document.getElementById('admin-username').value.trim();
+  const password = document.getElementById('admin-password').value;
+  if (!username || !password) { setError('admin-error', 'Please enter admin username and password'); return; }
+  try {
+    const r = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password,role:'admin'}) });
+    const data = await r.json();
+    if (!r.ok) { setError('admin-error', data.error); return; }
+    window.location.href = '/admin';
+  } catch(e) { setError('admin-error', 'Login failed. Try again.'); }
+}
+function continueAsGuest() { window.location.href = '/'; }
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (document.getElementById('box-admin').style.display !== 'none') doAdminLogin();
+  else if (document.getElementById('form-register').style.display !== 'none') doRegister();
+  else doLogin();
+});
+</script>
+</body>
+</html>

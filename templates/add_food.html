@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Add Food — Food Tracker{% endblock %}
+
+{% set active_page = 'add' %}
+
+{% block content %}
+<div class="page-card">
+  <h2 class="page-title">+ New Food Item</h2>
+  <p class="page-sub">Add a food to the global library. It can then be assigned to any date.</p>
+  <hr class="divider">
+  <div class="form-row">
+    <div class="field-group">
+      <label for="food-name">Food Name</label>
+      <input type="text" id="food-name" placeholder="e.g. Food" autocomplete="off">
+    </div>
+    <div class="field-group">
+      <label for="protein">Protein (g)</label>
+      <input type="number" id="protein" placeholder="0" min="0">
+    </div>
+    <div class="field-group">
+      <label for="carbs">Carbohydrates (g)</label>
+      <input type="number" id="carbs" placeholder="0" min="0">
+    </div>
+    <div class="field-group">
+      <label for="fat">Fat (g)</label>
+      <input type="number" id="fat" placeholder="0" min="0">
+    </div>
+    <div class="field-group calories-preview-group">
+      <label>Est. Calories</label>
+      <div class="calories-preview" id="cal-preview">—</div>
+    </div>
+    <div class="field-group submit-group">
+      <label style="visibility:hidden">x</label>
+      <button class="btn-primary" onclick="addFood()">↑ Submit</button>
+    </div>
+  </div>
+</div>
+
+<div class="page-card" style="margin-top:24px">
+  <h2 class="page-title">Food Library</h2>
+  <p class="page-sub" id="food-count-text">0 items in library</p>
+  <div class="table-wrap" id="food-table-wrap">
+    <div class="empty-state"><div class="big-icon">🍽️</div><p>No food items yet. Add one above.</p></div>
+  </div>
+</div>
+
+<!-- Edit Food Modal -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <h3>✏ EDIT FOOD ITEM</h3>
+    <div class="form-col">
+      <div class="field-group"><label>Food Name</label><input type="text" id="edit-name"></div>
+      <div class="field-group"><label>Protein (g)</label><input type="number" id="edit-protein" min="0"></div>
+      <div class="field-group"><label>Carbohydrates (g)</label><input type="number" id="edit-carbs" min="0"></div>
+      <div class="field-group"><label>Fat (g)</label><input type="number" id="edit-fat" min="0"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeEditModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allFoods = [];
+let editingFoodId = null;
+
+async function renderFoodLibrary() {
+  try { allFoods = await api('GET', '/api/foods'); } catch (e) { showToast('Failed to load', true); return; }
+  const wrap = document.getElementById('food-table-wrap');
+  const ct   = document.getElementById('food-count-text');
+  ct.textContent = `${allFoods.length} item${allFoods.length !== 1 ? 's' : ''} in library`;
+  if (allFoods.length === 0) {
+    wrap.innerHTML = `<div class="empty-state"><div class="big-icon">🍽️</div><p>No food items yet. Add one above.</p></div>`;
+    return;
+  }
+  wrap.innerHTML = `<table><thead><tr>
+    <th>#</th><th>Name</th><th>Protein (g)</th><th>Carbs (g)</th><th>Fat (g)</th><th>Calories</th><th>Actions</th>
+  </tr></thead><tbody>
+  ${allFoods.map((f, i) => `<tr>
+    <td class="num">${i + 1}</td>
+    <td class="food-name">${escHtml(f.name)}</td>
+    <td class="num">${f.protein}</td>
+    <td class="num">${f.carbs}</td>
+    <td class="num">${f.fat}</td>
+    <td class="cal-cell">${calcCal(f.protein, f.carbs, f.fat)}</td>
+    <td>
+      <button class="btn-sm default" onclick="openEditModal('${f.id}')">✏ Edit</button>&nbsp;
+      <button class="btn-sm danger"  onclick="deleteFood('${f.id}')">✕ Delete</button>
+    </td>
+  </tr>`).join('')}
+  </tbody></table>`;
+}
+
+async function addFood() {
+  const name    = document.getElementById('food-name').value.trim();
+  const protein = document.getElementById('protein').value;
+  const carbs   = document.getElementById('carbs').value;
+  const fat     = document.getElementById('fat').value;
+  if (!name) { showToast('Please enter a food name.', true); return; }
+  if (protein === '' || carbs === '' || fat === '') { showToast('Please fill in all macro fields.', true); return; }
+  try {
+    await api('POST', '/api/foods', { name, protein: +protein, carbs: +carbs, fat: +fat });
+    document.getElementById('food-name').value  = '';
+    document.getElementById('protein').value    = '';
+    document.getElementById('carbs').value      = '';
+    document.getElementById('fat').value        = '';
+    document.getElementById('cal-preview').textContent = '—';
+    showToast(`"${name}" added to library!`);
+    renderFoodLibrary();
+  } catch (e) { showToast(e.message, true); }
+}
+
+async function deleteFood(id) {
+  const f = allFoods.find(x => x.id === id);
+  if (!confirm(`Delete "${f?.name}" from the food library?\nIt will also be removed from all dates.`)) return;
+  try {
+    await api('DELETE', '/api/foods/' + id);
+    showToast('Food deleted from library.');
+    renderFoodLibrary();
+  } catch (e) { showToast(e.message, true); }
+}
+
+function openEditModal(id) {
+  const f = allFoods.find(x => x.id === id);
+  if (!f) return;
+  editingFoodId = id;
+  document.getElementById('edit-name').value    = f.name;
+  document.getElementById('edit-protein').value = f.protein;
+  document.getElementById('edit-carbs').value   = f.carbs;
+  document.getElementById('edit-fat').value     = f.fat;
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.remove('open');
+  editingFoodId = null;
+}
+
+async function saveEdit() {
+  const name    = document.getElementById('edit-name').value.trim();
+  const protein = document.getElementById('edit-protein').value;
+  const carbs   = document.getElementById('edit-carbs').value;
+  const fat     = document.getElementById('edit-fat').value;
+  if (!name) { showToast('Name cannot be empty.', true); return; }
+  try {
+    await api('PUT', '/api/foods/' + editingFoodId, { name, protein: +protein, carbs: +carbs, fat: +fat });
+    closeEditModal();
+    showToast('Food updated!');
+    renderFoodLibrary();
+  } catch (e) { showToast(e.message, true); }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.getElementById('food-name').addEventListener('keydown', e => { if (e.key === 'Enter') addFood(); });
+['protein', 'carbs', 'fat'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    const p = +document.getElementById('protein').value || 0;
+    const c = +document.getElementById('carbs').value   || 0;
+    const f = +document.getElementById('fat').value     || 0;
+    const cal = p * 4 + c * 4 + f * 9;
+    document.getElementById('cal-preview').textContent = cal > 0 ? cal + ' kcal' : '—';
+  });
+});
+document.getElementById('edit-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeEditModal();
+});
+renderFoodLibrary();
+</script>
+{% endblock %}

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Food Tracker{% endblock %}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<header>
+  <a class="logo" href="/" id="logo-link">FOOD TRACKER</a>
+  <nav id="main-nav">
+    <a href="/" {% if active_page == 'home' %}class="active"{% endif %}>Home</a>
+    <a href="/add-food" {% if active_page == 'add' %}class="active"{% endif %}>Add Food Item</a>
+  </nav>
+  <div class="header-auth" id="header-auth"></div>
+</header>
+
+<main>{% block content %}{% endblock %}</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => { t.className = 'toast'; }, 2400);
+}
+function calcCal(p, c, f) { return Math.round(+p * 4 + +c * 4 + +f * 9); }
+function fmtDate(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+async function loadAuthHeader() {
+  try {
+    const data = await fetch('/api/auth/me').then(r => r.json());
+    const el = document.getElementById('header-auth');
+    const nav = document.getElementById('main-nav');
+    const logoLink = document.getElementById('logo-link');
+    const p = window.location.pathname;
+    if (data.loggedIn && data.role === 'admin') {
+      if (p === '/' || p === '/add-food' || p === '/view-date') { window.location.href = '/admin'; return; }
+      logoLink.href = '/admin';
+      nav.innerHTML = `<a href="/admin" class="active">Dashboard</a>`;
+      el.innerHTML = `<span class="auth-chip admin">⚙ ADMIN · ${data.username}</span><button class="btn-logout" onclick="doLogout()">Logout</button>`;
+    } else {
+      nav.innerHTML = `<a href="/" ${p==='/'?'class="active"':''}>Home</a><a href="/add-food" ${p==='/add-food'?'class="active"':''}>Add Food Item</a>`;
+      el.innerHTML = data.loggedIn
+        ? `<span class="auth-chip user">👤 ${data.username}</span><button class="btn-logout" onclick="doLogout()">Logout</button>`
+        : `<a class="btn-nav-login" href="/login">Login / Register →</a>`;
+    }
+  } catch(e) {}
+}
+async function doLogout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+loadAuthHeader();
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

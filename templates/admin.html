@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Admin — Food Tracker{% endblock %}
+
+{% block content %}
+<div class="page-card">
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
+    <h2 class="page-title" style="margin:0">Admin Dashboard</h2>
+    <span style="background:rgba(224,123,57,0.15);border:1px solid rgba(224,123,57,0.4);border-radius:6px;color:var(--accent2);font-family:var(--mono);font-size:10px;letter-spacing:1.5px;padding:4px 10px;">⚙ ADMIN</span>
+  </div>
+  <p class="page-sub">View and manage all registered users and their food tracking data.</p>
+</div>
+
+<div style="display:grid;grid-template-columns:280px 1fr;gap:20px;margin-top:20px;align-items:start;">
+  <div class="page-card">
+    <h2 class="page-title">Users</h2>
+    <p class="page-sub" id="user-count-text">Loading…</p>
+    <div id="user-list" style="margin-top:16px;display:flex;flex-direction:column;gap:6px;"></div>
+  </div>
+
+  <div id="user-detail" style="display:none;">
+    <div class="page-card">
+      <div class="detail-header-row">
+        <h2 class="page-title" id="detail-username" style="margin:0">—</h2>
+        <button class="btn-delete-user" onclick="deleteSelectedUser()">✕ Delete User</button>
+      </div>
+      <p class="page-sub" id="detail-sub" style="margin-top:6px;"></p>
+    </div>
+    <div class="page-card" style="margin-top:16px;">
+      <h2 class="page-title">Date Records</h2>
+      <div id="admin-dates-wrap"><div class="empty-state"><div class="big-icon">📅</div><p>No date records.</p></div></div>
+    </div>
+    <div class="page-card" style="margin-top:16px;">
+      <h2 class="page-title">Food Library</h2>
+      <div id="admin-foods-wrap"><div class="empty-state"><div class="big-icon">🍽️</div><p>No food items.</p></div></div>
+    </div>
+  </div>
+
+  <div id="user-placeholder" class="page-card" style="display:flex;align-items:center;justify-content:center;min-height:200px;">
+    <div class="empty-state"><div class="big-icon">👈</div><p>Select a user from the list</p></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allUsers = [], selectedUid = null, selectedUsername = null;
+
+async function loadUsers() {
+  try {
+    const r = await fetch('/api/admin/users');
+    if (r.status === 403) { window.location.href = '/login'; return; }
+    allUsers = await r.json();
+    document.getElementById('user-count-text').textContent =
+      `${allUsers.length} registered user${allUsers.length!==1?'s':''}`;
+    const list = document.getElementById('user-list');
+    list.innerHTML = allUsers.length === 0
+      ? '<p style="color:var(--text-muted);font-size:13px;">No users registered yet.</p>'
+      : allUsers.map(u => `
+        <div class="user-row">
+          <button class="ubtn" id="ubtn-${u.id}" onclick="selectUser('${u.id}','${escHtml(u.username)}')">👤 ${escHtml(u.username)}</button>
+          <button class="del-user-btn" onclick="deleteUser('${u.id}','${escHtml(u.username)}')" title="Delete user">✕</button>
+        </div>`).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function selectUser(uid, username) {
+  selectedUid = uid; selectedUsername = username;
+  document.querySelectorAll('.ubtn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('ubtn-'+uid)?.classList.add('selected');
+  document.getElementById('user-detail').style.display = '';
+  document.getElementById('user-placeholder').style.display = 'none';
+  document.getElementById('detail-username').textContent = '👤 ' + username;
+  try {
+    const [dates, foods] = await Promise.all([
+      fetch('/api/admin/users/'+uid+'/dates').then(r=>r.json()),
+      fetch('/api/admin/users/'+uid+'/foods').then(r=>r.json()),
+    ]);
+    document.getElementById('detail-sub').textContent =
+      `${dates.length} date record${dates.length!==1?'s':''} · ${foods.length} food item${foods.length!==1?'s':''}`;
+    const foodMap = Object.fromEntries(foods.map(f => [f.id, f]));
+    function getTotals(date) {
+      let p=0,c=0,f=0;
+      (date.foodIds||[]).forEach(fid=>{const x=foodMap[fid];if(x){p+=+x.protein;c+=+x.carbs;f+=+x.fat;}});
+      return{protein:p,carbs:c,fat:f,calories:calcCal(p,c,f)};
+    }
+    const dw = document.getElementById('admin-dates-wrap');
+    if (dates.length === 0) {
+      dw.innerHTML = '<div class="empty-state"><div class="big-icon">📅</div><p>No date records yet.</p></div>';
+    } else {
+      let rows = '';
+      dates.forEach((d, i) => {
+        const t = getTotals(d);
+        const loggedFoods = (d.foodIds || []).map(fid => foodMap[fid]).filter(Boolean);
+        const expandId = `expand-${d.id}`;
+        rows += `<tr class="date-summary-row" onclick="toggleDateExpand('${expandId}')" style="cursor:pointer;" title="Click to see foods">
+          <td class="num">${i+1}</td>
+          <td class="food-name">📅 ${fmtDate(d.date)}</td>
+          <td class="num">${d.foodIds.length} <span style="font-size:11px;color:var(--text-muted);">▼</span></td>
+          <td class="num">${t.protein}g</td>
+          <td class="num">${t.carbs}g</td>
+          <td class="num">${t.fat}g</td>
+          <td class="cal-cell">${t.calories}</td>
+        </tr>
+        <tr id="${expandId}" style="display:none;">
+          <td colspan="7" style="padding:0;">
+            <div style="background:rgba(255,255,255,0.03);border-top:1px solid var(--border);padding:12px 20px;">
+              ${loggedFoods.length === 0
+                ? '<p style="color:var(--text-muted);font-size:13px;margin:4px 0;">No foods logged for this date.</p>'
+                : `<table style="margin:0;font-size:13px;">
+                    <thead><tr>
+                      <th style="padding:6px 12px;">#</th>
+                      <th style="padding:6px 12px;">Food Name</th>
+                      <th style="padding:6px 12px;">Protein (g)</th>
+                      <th style="padding:6px 12px;">Carbs (g)</th>
+                      <th style="padding:6px 12px;">Fat (g)</th>
+                      <th style="padding:6px 12px;">Calories</th>
+                    </tr></thead>
+                    <tbody>
+                      ${loggedFoods.map((f, j) => `<tr>
+                        <td class="num" style="padding:5px 12px;">${j+1}</td>
+                        <td class="food-name" style="padding:5px 12px;">${escHtml(f.name)}</td>
+                        <td class="num" style="padding:5px 12px;">${f.protein}g</td>
+                        <td class="num" style="padding:5px 12px;">${f.carbs}g</td>
+                        <td class="num" style="padding:5px 12px;">${f.fat}g</td>
+                        <td class="cal-cell" style="padding:5px 12px;">${calcCal(f.protein, f.carbs, f.fat)}</td>
+                      </tr>`).join('')}
+                    </tbody>
+                  </table>`
+              }
+            </div>
+          </td>
+        </tr>`;
+      });
+      dw.innerHTML = `<table><thead><tr><th>#</th><th>Date</th><th>Foods Logged</th><th>Protein (g)</th><th>Carbs (g)</th><th>Fat (g)</th><th>Calories</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    const fw = document.getElementById('admin-foods-wrap');
+    fw.innerHTML = foods.length === 0
+      ? '<div class="empty-state"><div class="big-icon">🍽️</div><p>No food items yet.</p></div>'
+      : `<table><thead><tr><th>#</th><th>Name</th><th>Protein (g)</th><th>Carbs (g)</th><th>Fat (g)</th><th>Calories</th></tr></thead><tbody>
+      ${foods.map((f,i)=>`<tr><td class="num">${i+1}</td><td class="food-name">${escHtml(f.name)}</td><td class="num">${f.protein}</td><td class="num">${f.carbs}</td><td class="num">${f.fat}</td><td class="cal-cell">${calcCal(f.protein,f.carbs,f.fat)}</td></tr>`).join('')}
+      </tbody></table>`;
+  } catch(e) { console.error(e); }
+}
+
+async function deleteUser(uid, username) {
+  if (!confirm(`Delete user "${username}"?\n\nThis will permanently remove their account and all their food tracking data.`)) return;
+  try {
+    const r = await fetch('/api/admin/users/' + uid, { method: 'DELETE' });
+    if (!r.ok) { const d = await r.json(); alert(d.error || 'Delete failed'); return; }
+    if (selectedUid === uid) {
+      selectedUid = null; selectedUsername = null;
+      document.getElementById('user-detail').style.display = 'none';
+      document.getElementById('user-placeholder').style.display = '';
+    }
+    loadUsers();
+  } catch(e) { alert('Delete failed'); }
+}
+
+function deleteSelectedUser() {
+  if (selectedUid && selectedUsername) deleteUser(selectedUid, selectedUsername);
+}
+
+function toggleDateExpand(expandId) {
+  const row = document.getElementById(expandId);
+  if (!row) return;
+  const isVisible = row.style.display !== 'none';
+  row.style.display = isVisible ? 'none' : '';
+  const summaryRow = row.previousElementSibling;
+  if (summaryRow) {
+    const arrow = summaryRow.querySelector('span[style*="font-size:11px"]');
+    if (arrow) arrow.textContent = isVisible ? '▼' : '▲';
+  }
+}
+
+loadUsers();
+</script>
+{% endblock %}
